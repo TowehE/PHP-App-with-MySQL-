@@ -40,6 +40,7 @@ pipeline {
                 echo "Artifact stored at: ${WORKSPACE}/${ARTIFACT_DIR}/${ARTIFACT_NAME}-${params.VERSION}.zip"
 
                 // AWS Credentials added here for S3 upload
+                /*
                 withAWS(credentials: 'aws-s3-credentials') {  // <-- Opening the AWS credentials block
                     s3Upload(
                         bucket: 'your-s3-bucket-name',  // <-- Specify your S3 bucket
@@ -47,6 +48,7 @@ pipeline {
                         path: "artifacts/${ARTIFACT_NAME}-${params.VERSION}.zip"
                     )
                 }  // <-- Close the withAWS block here
+                */
             }
         }
         
