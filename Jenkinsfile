@@ -38,6 +38,14 @@ pipeline {
                 // Here you would upload to Nexus or S3
                 // For now, we'll just keep it locally
                 echo "Artifact stored at: ${WORKSPACE}/${ARTIFACT_DIR}/${ARTIFACT_NAME}-${params.VERSION}.zip"
+
+                  // AWS Credentials added here for S3 upload
+                withAWS(credentials: 'aws-s3-credentials') {  // <--- Modifying here
+                    s3Upload(
+                        bucket: 'your-s3-bucket-name',  // <-- Specify your S3 bucket
+                        file: "${ARTIFACT_DIR}/${ARTIFACT_NAME}-${params.VERSION}.zip",
+                        path: "artifacts/${ARTIFACT_NAME}-${params.VERSION}.zip"
+                    )
             }
         }
         
