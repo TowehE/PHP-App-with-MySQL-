@@ -61,13 +61,17 @@ pipeline {
                 
                 script {
                     env.app_version = params.VERSION
-                    
+                    env.ARTIFACT_FILENAME = "${ARTIFACT_NAME}-${params.VERSION}.zip"
+        
                     // Add staging server host key to known_hosts
                     sh "mkdir -p ~/.ssh"
                     sh "ssh-keyscan -H 18.208.213.31 >> ~/.ssh/known_hosts"
                     
                     sshagent(['staging-ssh-key']) {
                         sh """
+                            # Copy artifact to staging server
+                            scp ${ARTIFACT_DIR}/${ARTIFACT_FILENAME} ubuntu@18.208.213.31:/tmp/
+                            
                             cd ansible
                             ansible-playbook playbook.yml -i inventory -e "target_env=staging app_version=${params.VERSION}"
                         """
