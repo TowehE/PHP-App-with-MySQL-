@@ -2,8 +2,9 @@
 - hosts: "{{ target_env }}"
   become: yes
   vars:
-    app_name: php-crud-app
-    artifact_path: "{{ lookup('env', 'WORKSPACE') }}/artifacts/{{ app_name }}-{{ app_version }}.zip"
+    app_name: "{{ artifact_name | default('php-crud-app-' + app_version) }}"
+    # Look for the artifact in a relative path (relative to ansible directory)
+    artifact_path: "../artifacts/{{ app_name }}"
     deploy_path: /var/www/html
   roles:
     - apache_php
