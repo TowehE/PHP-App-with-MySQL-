@@ -9,6 +9,7 @@ pipeline {
     environment {
         ARTIFACT_NAME = "php-crud-app"
         ARTIFACT_DIR = "artifacts"
+        MYSQL_CREDS = credentials('mysql-credentials')
     }
     
     stages {
