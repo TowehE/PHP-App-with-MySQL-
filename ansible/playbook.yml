@@ -3,7 +3,7 @@
   become: yes
   vars:
     app_name: php-crud-app
-    artifact_path: "{{ lookup('env', 'WORKSPACE') }}/artifacts/{{ app_version }}.zip"
+    artifact_path: "{{ lookup('env', 'WORKSPACE') }}/artifacts/{{ app_name }}-{{ app_version }}.zip"
     deploy_path: /var/www/html
   roles:
     - apache_php
