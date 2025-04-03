@@ -41,14 +41,14 @@ pipeline {
 
                 // AWS Credentials added here for S3 upload
                 /*
-                withAWS(credentials: 'aws-s3-credentials') {  // <-- Opening the AWS credentials block
+                withAWS(credentials: 'aws-s3-credentials') {
                     s3Upload(
-                        bucket: 'your-s3-bucket-name',  // <-- Specify your S3 bucket
+                        bucket: 'your-s3-bucket-name',
                         file: "${ARTIFACT_DIR}/${ARTIFACT_NAME}-${params.VERSION}.zip",
                         path: "artifacts/${ARTIFACT_NAME}-${params.VERSION}.zip"
                     )
-                }  // <-- Close the withAWS block here
-               */ 
+                }
+                */
             }
         }
         
@@ -62,17 +62,21 @@ pipeline {
                 script {
                     env.app_version = params.VERSION
                     
-                       sshagent(['staging-ssh-key']) {
-                sh """
-                    cd ansible
-                    ansible-playbook playbook.yml -i inventory -e "target_env=staging app_version=${params.VERSION}"
-                """
+                    // Add staging server host key to known_hosts
+                    sh "mkdir -p ~/.ssh"
+                    sh "ssh-keyscan -H 18.208.213.31 >> ~/.ssh/known_hosts"
+                    
+                    sshagent(['staging-ssh-key']) {
+                        sh """
+                            cd ansible
+                            ansible-playbook playbook.yml -i inventory -e "target_env=staging app_version=${params.VERSION}"
+                        """
+                    }
+                }
+                
+                echo "Staging deployment complete. Access at http://18.208.213.31"
             }
         }
-        
-        echo "Staging deployment complete. Access at http://18.208.213.31"
-    }
-}
         
         stage('Approve Production Deployment') {
             when {
@@ -91,20 +95,24 @@ pipeline {
             steps {
                 echo "Deploying version ${params.VERSION} to Production environment"
                 
-              script {
-            env.app_version = params.VERSION
-            
-            sshagent(['staging-ssh-key']) {  // Using the same key for both environments
-                sh """
-                    cd ansible
-                    ansible-playbook playbook.yml -i inventory -e "target_env=production app_version=${params.VERSION}"
-                """
+                script {
+                    env.app_version = params.VERSION
+                    
+                    // Add production server host key to known_hosts
+                    sh "mkdir -p ~/.ssh"
+                    sh "ssh-keyscan -H 172.31.23.26 >> ~/.ssh/known_hosts"
+                    
+                    sshagent(['staging-ssh-key']) {  // Using the same key for both environments
+                        sh """
+                            cd ansible
+                            ansible-playbook playbook.yml -i inventory -e "target_env=production app_version=${params.VERSION}"
+                        """
+                    }
+                }
+                
+                echo "Production deployment complete. Access at http://172.31.23.26"
             }
         }
-        
-        echo "Production deployment complete. Access at http://172.31.23.26"
-    }
-}
     }
     
     post {
