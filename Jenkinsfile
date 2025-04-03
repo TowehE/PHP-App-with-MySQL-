@@ -35,10 +35,8 @@ pipeline {
         
         stage('Store Artifact') {
             steps {
-                // Here you would upload to Nexus or S3
-                // For now, we'll just keep it locally
                 echo "Artifact stored at: ${WORKSPACE}/${ARTIFACT_DIR}/${ARTIFACT_NAME}-${params.VERSION}.zip"
-
+                
                 // AWS Credentials added here for S3 upload
                 /*
                 withAWS(credentials: 'aws-s3-credentials') {
@@ -60,20 +58,20 @@ pipeline {
                 echo "Deploying version ${params.VERSION} to Staging environment"
                 
                 script {
-                    env.app_version = params.VERSION
-                    env.ARTIFACT_FILENAME = "${ARTIFACT_NAME}-${params.VERSION}.zip"
-        
+                    def artifactFilename = "${ARTIFACT_NAME}-${params.VERSION}.zip"
+                    def localArtifactPath = "${WORKSPACE}/${ARTIFACT_DIR}/${artifactFilename}"
+                    
                     // Add staging server host key to known_hosts
                     sh "mkdir -p ~/.ssh"
                     sh "ssh-keyscan -H 18.208.213.31 >> ~/.ssh/known_hosts"
                     
+                    // Copy the artifact to the staging server
                     sshagent(['staging-ssh-key']) {
+                        sh "scp ${localArtifactPath} ubuntu@18.208.213.31:/tmp/${artifactFilename}"
+                        
                         sh """
-                            # Copy artifact to staging server
-                            scp ${ARTIFACT_DIR}/${ARTIFACT_FILENAME} ubuntu@18.208.213.31:/tmp/
-                            
                             cd ansible
-                            ansible-playbook playbook.yml -i inventory -e "target_env=staging app_version=${params.VERSION}"
+                            ansible-playbook playbook.yml -i inventory -e "target_env=staging app_version=${params.VERSION} artifact_path=/tmp/${artifactFilename}"
                         """
                     }
                 }
@@ -100,16 +98,20 @@ pipeline {
                 echo "Deploying version ${params.VERSION} to Production environment"
                 
                 script {
-                    env.app_version = params.VERSION
+                    def artifactFilename = "${ARTIFACT_NAME}-${params.VERSION}.zip"
+                    def localArtifactPath = "${WORKSPACE}/${ARTIFACT_DIR}/${artifactFilename}"
                     
                     // Add production server host key to known_hosts
                     sh "mkdir -p ~/.ssh"
                     sh "ssh-keyscan -H 172.31.23.26 >> ~/.ssh/known_hosts"
                     
+                    // Copy the artifact to the production server
                     sshagent(['staging-ssh-key']) {  // Using the same key for both environments
+                        sh "scp ${localArtifactPath} ubuntu@172.31.23.26:/tmp/${artifactFilename}"
+                        
                         sh """
                             cd ansible
-                            ansible-playbook playbook.yml -i inventory -e "target_env=production app_version=${params.VERSION}"
+                            ansible-playbook playbook.yml -i inventory -e "target_env=production app_version=${params.VERSION} artifact_path=/tmp/${artifactFilename}"
                         """
                     }
                 }
