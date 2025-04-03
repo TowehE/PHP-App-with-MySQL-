@@ -13,12 +13,14 @@
     enabled: yes
 
 - name: Create MySQL user
-  mysql_user:
-    name: devops
-    password: password
-    host: localhost
-    priv: '*.*:ALL'
-    state: present
+  shell: |
+    sudo mysql -e "CREATE USER IF NOT EXISTS 'devops'@'%' IDENTIFIED BY 'password';"
+    sudo mysql -e "CREATE USER IF NOT EXISTS 'devops'@'localhost' IDENTIFIED BY 'password';"
+    sudo mysql -e "GRANT ALL PRIVILEGES ON *.* TO 'devops'@'%';"
+    sudo mysql -e "GRANT ALL PRIVILEGES ON *.* TO 'devops'@'localhost';"
+    sudo mysql -e "FLUSH PRIVILEGES;"
+  args:
+    executable: /bin/bash
 
 - name: Copy SQL initialization file
   copy:
@@ -26,6 +28,6 @@
     dest: /tmp/init.sql
 
 - name: Initialize database
-  shell: mysql < /tmp/init.sql
+  shell: sudo mysql < /tmp/init.sql
   args:
     executable: /bin/bash
