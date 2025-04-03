@@ -62,16 +62,17 @@ pipeline {
                 script {
                     env.app_version = params.VERSION
                     
-                    // Run Ansible playbook for staging
-                    sh """
-                        cd ansible
-                        ansible-playbook playbook.yml -i inventory -e "target_env=staging app_version=${params.VERSION}"
-                    """
-                }
-                
-                echo "Staging deployment complete. Access at http://[staging-server-ip]"
+                       sshagent(['staging-ssh-key']) {
+                sh """
+                    cd ansible
+                    ansible-playbook playbook.yml -i inventory -e "target_env=staging app_version=${params.VERSION}"
+                """
             }
         }
+        
+        echo "Staging deployment complete. Access at http://18.208.213.31"
+    }
+}
         
         stage('Approve Production Deployment') {
             when {
@@ -90,19 +91,20 @@ pipeline {
             steps {
                 echo "Deploying version ${params.VERSION} to Production environment"
                 
-                script {
-                    env.app_version = params.VERSION
-                    
-                    // Run Ansible playbook for production
-                    sh """
-                        cd ansible
-                        ansible-playbook playbook.yml -i inventory -e "target_env=production app_version=${params.VERSION}"
-                    """
-                }
-                
-                echo "Production deployment complete. Access at http://[production-server-ip]"
+              script {
+            env.app_version = params.VERSION
+            
+            sshagent(['staging-ssh-key']) {  // Using the same key for both environments
+                sh """
+                    cd ansible
+                    ansible-playbook playbook.yml -i inventory -e "target_env=production app_version=${params.VERSION}"
+                """
             }
         }
+        
+        echo "Production deployment complete. Access at http://172.31.23.26"
+    }
+}
     }
     
     post {
