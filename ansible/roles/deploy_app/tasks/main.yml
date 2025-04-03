@@ -1,0 +1,29 @@
+---
+- name: Remove existing app directory
+  file:
+    path: "{{ deploy_path }}"
+    state: absent
+
+- name: Create app directory
+  file:
+    path: "{{ deploy_path }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: '0755'
+
+- name: Extract application archive
+  unarchive:
+    src: "{{ artifact_path }}"
+    dest: "{{ deploy_path }}"
+    owner: www-data
+    group: www-data
+    remote_src: yes
+
+- name: Set proper permissions
+  file:
+    path: "{{ deploy_path }}"
+    owner: www-data
+    group: www-data
+    mode: '0755'
+    recurse: yes

@@ -1,0 +1,31 @@
+---
+- name: Install MySQL
+  apt:
+    name:
+      - mysql-server
+      - python3-pymysql
+    state: present
+
+- name: Start MySQL service
+  systemd:
+    name: mysql
+    state: started
+    enabled: yes
+
+- name: Create MySQL user
+  mysql_user:
+    name: devops
+    password: password
+    host: localhost
+    priv: '*.*:ALL'
+    state: present
+
+- name: Copy SQL initialization file
+  copy:
+    src: "{{ lookup('env', 'WORKSPACE') }}/sql/init.sql"
+    dest: /tmp/init.sql
+
+- name: Initialize database
+  shell: mysql < /tmp/init.sql
+  args:
+    executable: /bin/bash
