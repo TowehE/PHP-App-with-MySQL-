@@ -97,6 +97,7 @@ pipeline {
                 
               script {
             env.app_version = params.VERSION
+            def fullArtifactPath = "${WORKSPACE}/${ARTIFACT_DIR}/${ARTIFACT_NAME}-${params.VERSION}.zip"
 
              // First, accept the host key for the server
             sh "ssh-keyscan -H 172.31.23.26 >> ~/.ssh/known_hosts"
@@ -104,7 +105,7 @@ pipeline {
             sshagent(['staging-ssh-key']) {  // Using the same key for both environments
                 sh """
                     cd ansible
-                    ansible-playbook playbook.yml -i inventory -e "target_env=production app_version=${params.VERSION}"
+                    ansible-playbook playbook.yml -i inventory -e "target_env=staging app_version=${params.VERSION} artifact_path=${fullArtifactPath}"
                 """
             }
         }
