@@ -18,7 +18,7 @@
     dest: "{{ deploy_path }}"
     owner: www-data
     group: www-data
-    remote_src: yes
+    remote_src: no
 
 - name: Set proper permissions
   file:
