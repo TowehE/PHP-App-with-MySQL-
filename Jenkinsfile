@@ -52,24 +52,30 @@ pipeline {
             }
         }
         
-        stage('Deploy to Staging') {
-            when {
-                expression { params.ENVIRONMENT == 'staging' }
-            }
-            steps {
-                echo "Deploying version ${params.VERSION} to Staging environment"
+      stage('Deploy to Staging') {
+    when {
+        expression { params.ENVIRONMENT == 'staging' }
+    }
+    steps {
+        echo "Deploying version ${params.VERSION} to Staging environment"
+        
+        script {
+            env.app_version = params.VERSION
+            def artifactName = "${ARTIFACT_NAME}-${params.VERSION}.zip"
+            
+            // Create directory structure to match Ansible's expectation
+            sh "mkdir -p ansible/../artifacts/"
+            
+            // Copy artifact to where Ansible expects it
+            sh "cp ${ARTIFACT_DIR}/${artifactName} ansible/../artifacts/${artifactName}"
+            
+            // SSH key setup
+            sh "ssh-keyscan -H 18.208.213.31 >> ~/.ssh/known_hosts"
                 
-                script {
-                    env.app_version = params.VERSION
-                   def artifactName = "${ARTIFACT_NAME}-${params.VERSION}.zip"
-
-                     // First, accept the host key for the server
-                     sh "ssh-keyscan -H 18.208.213.31 >> ~/.ssh/known_hosts"
-                    
-                       sshagent(['staging-ssh-key']) {
+            sshagent(['staging-ssh-key']) {
                 sh """
                     cd ansible
-                    ansible-playbook playbook.yml -i inventory -e "target_env=staging app_version=${params.VERSION} artifact_name=${ARTIFACT_NAME}-${params.VERSION}.zip"
+                    ansible-playbook playbook.yml -i inventory -e "target_env=staging app_version=${params.VERSION} artifact_name=${artifactName}"
                 """
             }
         }
