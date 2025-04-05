@@ -1,5 +1,6 @@
 [staging]
-staging-server ansible_host=172.31.27.239 ansible_user=ubuntu
+staging-server ansible_host=172.31.27.239 ansible_user=ubuntu ansible_ssh_common_args='-o StrictHostKeyChecking=no'
 
 [production]
-production-server ansible_host=172.31.23.26 ansible_user=ubuntu
+production-server ansible_host=172.31.23.26 ansible_user=ubuntu ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+
