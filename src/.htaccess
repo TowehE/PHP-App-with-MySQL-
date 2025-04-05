@@ -1,0 +1,18 @@
+- name: Create .htaccess file for redirection
+  copy:
+    content: |
+      <IfModule mod_rewrite.c>
+        RewriteEngine On
+        RewriteRule ^$ src/ [L]
+        RewriteRule (.*) src/$1 [L]
+      </IfModule>
+    dest: "{{ deploy_path }}/.htaccess"
+    owner: www-data
+    group: www-data
+    mode: '0644'
+
+- name: Enable Apache rewrite module
+  apache2_module:
+    name: rewrite
+    state: present
+  notify: Restart Apache
