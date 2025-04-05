@@ -1,4 +1,3 @@
----
 - name: Remove existing app directory
   file:
     path: "{{ deploy_path }}"
@@ -19,6 +18,11 @@
     owner: www-data
     group: www-data
     remote_src: no
+
+- name: Move files from src directory to web root
+  shell: "mv {{ deploy_path }}/src/* {{ deploy_path }}/"
+  args:
+    removes: "{{ deploy_path }}/src/index.php"
 
 - name: Set proper permissions
   file:
