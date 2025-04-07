@@ -8,6 +8,7 @@ pipeline {
     parameters {
         string(name: 'VERSION', defaultValue: '1.0.0', description: 'Version to deploy')
         choice(name: 'ENVIRONMENT', choices: ['staging', 'production'], description: 'Environment to deploy to')
+        booleanParam(name: 'REQUIRE_APPROVAL', defaultValue: true, description: 'Require manual approval for production deployment')
     }
     
     environment {
@@ -53,53 +54,128 @@ pipeline {
                     }
                 }
                 
-                // Save the task ID for manual checking if needed
+                // Save the task ID using a more reliable method
                 script {
-                    def taskId = sh(script: "grep 'More about the report processing at' .scannerwork/report-task.txt | sed 's/.*id=\\(.*\\)/\\1/'", returnStdout: true).trim()
-                    env.SONAR_TASK_ID = taskId
-                    echo "SonarQube Task ID: ${env.SONAR_TASK_ID}"
+                    try {
+                        if (fileExists('.scannerwork/report-task.txt')) {
+                            def taskReport = readFile('.scannerwork/report-task.txt')
+                            echo "Found report-task.txt file"
+                            
+                            // Extract the ceTaskId using a regular expression
+                            def taskIdPattern = /.*ceTaskId=([a-zA-Z0-9_-]+).*/
+                            def matcher = taskReport =~ taskIdPattern
+                            
+                            if (matcher.find()) {
+                                env.SONAR_TASK_ID = matcher[0][1]
+                                echo "SonarQube Task ID: ${env.SONAR_TASK_ID}"
+                            } else {
+                                echo "Could not find ceTaskId in the report-task.txt file"
+                                // Alternative method
+                                def taskIdLine = sh(script: "grep 'ceTaskId=' .scannerwork/report-task.txt || echo 'Not found'", returnStdout: true).trim()
+                                echo "Task ID line: ${taskIdLine}"
+                                
+                                if (taskIdLine != 'Not found') {
+                                    env.SONAR_TASK_ID = taskIdLine.split('=')[1]
+                                    echo "SonarQube Task ID (alternative method): ${env.SONAR_TASK_ID}"
+                                }
+                            }
+                        } else {
+                            echo "Warning: .scannerwork/report-task.txt file not found"
+                        }
+                    } catch (Exception e) {
+                        echo "Error reading SonarQube task report: ${e.message}"
+                    }
                 }
             }
         }
         
         stage('Quality Gate') {
             steps {
-                timeout(time: 5, unit: 'MINUTES') {
-                    catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-                        waitForQualityGate abortPipeline: false
-                    }
-                }
-                
-                // Check quality gate status manually as a fallback
                 script {
-                    if (currentBuild.result == 'UNSTABLE') {
-                        echo "Quality Gate timed out. Checking status manually..."
+                    echo "Starting manual Quality Gate check..."
+                    
+                    // Initial wait to allow SonarQube to begin processing
+                    sleep time: 15, unit: 'SECONDS'
+                    
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                        def maxRetries = 12  // 3 minutes total with 15-second intervals
+                        def retryCount = 0
+                        def qualityGateStatus = "UNKNOWN"
+                        def projectStatus = "UNKNOWN"
                         
-                        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                            def statusCmd = """
-                                curl -u "${SONAR_TOKEN}:" "${env.SONAR_URL}/api/qualitygates/project_status?projectKey=${env.SONAR_PROJECT_KEY}" | jq -r '.projectStatus.status'
-                            """
-                            
+                        while (retryCount < maxRetries) {
                             try {
-                                def status = sh(script: statusCmd, returnStdout: true).trim()
-                                echo "Manual check for Quality Gate status: ${status}"
+                                // First check if the task is still in queue or in progress
+                                if (env.SONAR_TASK_ID) {
+                                    def taskStatusCmd = """
+                                        curl -s -u "${SONAR_TOKEN}:" "${env.SONAR_URL}/api/ce/task?id=${env.SONAR_TASK_ID}"
+                                    """
+                                    
+                                    def taskJson = sh(script: taskStatusCmd, returnStdout: true).trim()
+                                    echo "Task status response: ${taskJson}"
+                                    
+                                    def taskStatusExtractCmd = "echo '${taskJson}' | grep -o '\"status\":\"[^\"]*\"' | head -1 | cut -d '\"' -f 4"
+                                    def taskStatus = sh(script: taskStatusExtractCmd, returnStdout: true).trim()
+                                    
+                                    echo "Current task status: ${taskStatus}"
+                                    
+                                    if (taskStatus == "IN_PROGRESS" || taskStatus == "PENDING") {
+                                        echo "SonarQube analysis still in progress, waiting..."
+                                        sleep time: 15, unit: 'SECONDS'
+                                        retryCount++
+                                        continue
+                                    }
+                                }
                                 
-                                if (status == "ERROR") {
+                                // Check the quality gate status
+                                def statusCmd = """
+                                    curl -s -u "${SONAR_TOKEN}:" "${env.SONAR_URL}/api/qualitygates/project_status?projectKey=${env.SONAR_PROJECT_KEY}"
+                                """
+                                
+                                def statusJson = sh(script: statusCmd, returnStdout: true).trim()
+                                echo "Quality gate status response: ${statusJson}"
+                                
+                                def statusExtractCmd = "echo '${statusJson}' | grep -o '\"status\":\"[^\"]*\"' | head -1 | cut -d '\"' -f 4"
+                                qualityGateStatus = sh(script: statusExtractCmd, returnStdout: true).trim()
+                                
+                                echo "Current Quality Gate status: ${qualityGateStatus}"
+                                
+                                if (qualityGateStatus == "OK") {
+                                    echo "Quality Gate passed!"
+                                    projectStatus = "SUCCESS"
+                                    break
+                                } else if (qualityGateStatus == "ERROR") {
                                     echo "Quality Gate failed. Check SonarQube for details."
-                                    currentBuild.result = 'FAILURE'
-                                    error "Quality Gate failed"
-                                } else if (status == "OK") {
-                                    echo "Quality Gate passed manually!"
-                                    currentBuild.result = 'SUCCESS'
+                                    projectStatus = "FAILURE"
+                                    break
+                                } else if (qualityGateStatus == "NONE") {
+                                    echo "No Quality Gate defined or applied to this project."
+                                    projectStatus = "SUCCESS"  // Continue as success if no quality gate is defined
+                                    break
                                 } else {
-                                    echo "Uncertain Quality Gate status. Proceeding with caution."
-                                    currentBuild.result = 'UNSTABLE'
+                                    echo "Quality Gate status is still processing or unknown, waiting..."
+                                    sleep time: 15, unit: 'SECONDS'
                                 }
                             } catch (Exception e) {
-                                echo "Failed to check Quality Gate status manually. Proceeding with caution."
-                                currentBuild.result = 'UNSTABLE'
+                                echo "Error checking Quality Gate: ${e.message}"
+                                sleep time: 15, unit: 'SECONDS'
                             }
+                            
+                            retryCount++
                         }
+                        
+                        // Handle timeout or set final status
+                        if (retryCount >= maxRetries) {
+                            echo "Quality Gate check timed out after ${maxRetries} attempts."
+                            echo "Proceeding with the pipeline, but quality might not be verified."
+                            unstable('Quality Gate status could not be determined')
+                        } else if (projectStatus == "FAILURE") {
+                            error "Quality Gate failed - see SonarQube for details"
+                        }
+                        
+                        // Store quality gate URL for reference
+                        env.SONAR_QUALITY_GATE_URL = "${env.SONAR_URL}/dashboard?id=${env.SONAR_PROJECT_KEY}"
+                        echo "SonarQube Quality Gate details: ${env.SONAR_QUALITY_GATE_URL}"
                     }
                 }
             }
@@ -184,7 +260,10 @@ pipeline {
         
         stage('Approve Production Deployment') {
             when {
-                expression { params.ENVIRONMENT == 'production' }
+                allOf {
+                    expression { params.ENVIRONMENT == 'production' }
+                    expression { params.REQUIRE_APPROVAL == true }
+                }
             }
             steps {
                 // Manual approval step
@@ -250,8 +329,14 @@ pipeline {
             // Clean workspace but keep artifacts
             cleanWs(patterns: [[pattern: "${ARTIFACT_DIR}/**", type: 'INCLUDE']])
             
-            // Save SonarQube results link for easy access
-            echo "SonarQube results available at: ${env.SONAR_URL}/dashboard/index/${env.SONAR_PROJECT_KEY}"
+            // Print SonarQube links
+            script {
+                if (env.SONAR_QUALITY_GATE_URL) {
+                    echo "SonarQube Quality Gate results: ${env.SONAR_QUALITY_GATE_URL}"
+                } else {
+                    echo "SonarQube results available at: ${env.SONAR_URL}/dashboard?id=${env.SONAR_PROJECT_KEY}"
+                }
+            }
         }
     }
 }
