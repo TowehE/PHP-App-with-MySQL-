@@ -11,13 +11,42 @@ pipeline {
         ARTIFACT_DIR = "artifacts"
         MYSQL_CREDS = credentials('mysql-credentials')
         // Only staging needs a public IP
-        STAGING_PUBLIC_IP = "18.208.213.31"
+        STAGING_PUBLIC_IP = "3.80.29.14"
+        SONAR_TOKEN = credentials('sonar-token')
     }
     
     stages {
         stage('Checkout') {
             steps {
                 checkout scm
+            }
+        }
+
+     stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    // For PHP projects without Maven
+                    sh """
+                        sonar-scanner \
+                        -Dsonar.projectKey=php-crud-app \
+                        -Dsonar.projectName='PHP CRUD Application' \
+                        -Dsonar.projectVersion=${params.VERSION} \
+                        -Dsonar.sources=src \
+                        -Dsonar.host.url=http://54.196.217.149:9000 \
+                        -Dsonar.login=${SONAR_TOKEN}
+                    """
+                    
+                    // Alternative for Maven projects (commented out)
+                    // sh 'mvn sonar:sonar -Dsonar.host.url=http://54.196.217.149:9000 -Dsonar.login=${SONAR_TOKEN}'
+                }
+            }
+        }
+        
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 1, unit: 'HOURS') {
+                    waitForQualityGate abortPipeline: true
+                }
             }
         }
         
