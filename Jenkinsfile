@@ -54,7 +54,7 @@ pipeline {
         
         stage('Deploy to Staging') {
             when {
-                expression { params.ENVIRONMENT == 'staging' }
+                expression { params.ENVIRONMENT == 'staging' || params.ENVIRONMENT == 'both' }
             }
             steps {
                 echo "Deploying version ${params.VERSION} to Staging environment"
@@ -64,11 +64,11 @@ pipeline {
                     def artifactName = "${ARTIFACT_NAME}-${params.VERSION}.zip"
 
                     // Copy the artifact to the ansible directory
+                    sh "mkdir -p ansible || true"
                     sh "cp ${ARTIFACT_DIR}/${artifactName} ansible/"
                     
-                    // First, accept the host key for the server
-                    sh "ssh-keyscan -H 18.208.213.31 >> ~/.ssh/known_hosts"
-                    
+                    // Use sshagent with the configured key and let Ansible handle host checking
+                    // using the options from inventory file
                     sshagent(['staging-ssh-key']) {
                         sh """
                             cd ansible
@@ -77,7 +77,13 @@ pipeline {
                     }
                 }
                 
-                echo "Staging deployment complete. Access at http://18.208.213.31"
+                // Use the IP from inventory file
+                echo "Staging deployment complete. Access at http://172.31.27.239"
+            }
+            post {
+                failure {
+                    echo "Staging deployment failed. Check SSH connections and server availability."
+                }
             }
         }
         
@@ -103,12 +109,12 @@ pipeline {
                     def artifactName = "${ARTIFACT_NAME}-${params.VERSION}.zip"
 
                     // Copy the artifact to the ansible directory
+                    sh "mkdir -p ansible || true"
                     sh "cp ${ARTIFACT_DIR}/${artifactName} ansible/"
                     
-                    // First, accept the host key for the server
-                    sh "ssh-keyscan -H 172.31.23.26 >> ~/.ssh/known_hosts"
-                    
-                    sshagent(['staging-ssh-key']) {  // Using the same key for both environments
+                    // Use sshagent with the configured key and let Ansible handle host checking
+                    // using the options from inventory file
+                    sshagent(['production-ssh-key']) {  // Using a separate key for production
                         sh """
                             cd ansible
                             ansible-playbook playbook.yml -i inventory -e "target_env=production app_version=${params.VERSION} artifact_name=${artifactName} artifact_path=./${artifactName}"
@@ -116,7 +122,13 @@ pipeline {
                     }
                 }
                 
+                // Use the IP from inventory file
                 echo "Production deployment complete. Access at http://172.31.23.26"
+            }
+            post {
+                failure {
+                    echo "Production deployment failed. Check SSH connections and server availability."
+                }
             }
         }
     }
