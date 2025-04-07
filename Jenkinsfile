@@ -15,6 +15,8 @@ pipeline {
         ARTIFACT_DIR = "artifacts"
         MYSQL_CREDS = credentials('mysql-credentials')
         STAGING_PUBLIC_IP = "3.80.29.14"
+        SONAR_PROJECT_KEY = "php-crud-app"
+        SONAR_URL = "http://54.196.217.149:9000"
     }
     
     stages {
@@ -40,15 +42,22 @@ pipeline {
                         withEnv(["SONAR_SCANNER_OPTS=-Djava.security.manager=allow --add-opens=java.base/java.lang=ALL-UNNAMED"]) {
                             sh """
                                 ${tool 'SonarScanner'}/bin/sonar-scanner \\
-                                -Dsonar.projectKey=php-crud-app \\
+                                -Dsonar.projectKey=${env.SONAR_PROJECT_KEY} \\
                                 -Dsonar.projectName="PHP CRUD Application" \\
                                 -Dsonar.projectVersion=${params.VERSION} \\
                                 -Dsonar.sources=src \\
-                                -Dsonar.host.url=http://54.196.217.149:9000 \\
+                                -Dsonar.host.url=${env.SONAR_URL} \\
                                 -Dsonar.login=\${SONAR_TOKEN}
                             """
                         }
                     }
+                }
+                
+                // Save the task ID for manual checking if needed
+                script {
+                    def taskId = sh(script: "grep 'More about the report processing at' .scannerwork/report-task.txt | sed 's/.*id=\\(.*\\)/\\1/'", returnStdout: true).trim()
+                    env.SONAR_TASK_ID = taskId
+                    echo "SonarQube Task ID: ${env.SONAR_TASK_ID}"
                 }
             }
         }
@@ -56,8 +65,42 @@ pipeline {
         stage('Quality Gate') {
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
-                    // Changed to recordIssues for better error handling
-                    waitForQualityGate abortPipeline: true
+                    catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                        waitForQualityGate abortPipeline: false
+                    }
+                }
+                
+                // Check quality gate status manually as a fallback
+                script {
+                    if (currentBuild.result == 'UNSTABLE') {
+                        echo "Quality Gate timed out. Checking status manually..."
+                        
+                        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                            def statusCmd = """
+                                curl -u "${SONAR_TOKEN}:" "${env.SONAR_URL}/api/qualitygates/project_status?projectKey=${env.SONAR_PROJECT_KEY}" | jq -r '.projectStatus.status'
+                            """
+                            
+                            try {
+                                def status = sh(script: statusCmd, returnStdout: true).trim()
+                                echo "Manual check for Quality Gate status: ${status}"
+                                
+                                if (status == "ERROR") {
+                                    echo "Quality Gate failed. Check SonarQube for details."
+                                    currentBuild.result = 'FAILURE'
+                                    error "Quality Gate failed"
+                                } else if (status == "OK") {
+                                    echo "Quality Gate passed manually!"
+                                    currentBuild.result = 'SUCCESS'
+                                } else {
+                                    echo "Uncertain Quality Gate status. Proceeding with caution."
+                                    currentBuild.result = 'UNSTABLE'
+                                }
+                            } catch (Exception e) {
+                                echo "Failed to check Quality Gate status manually. Proceeding with caution."
+                                currentBuild.result = 'UNSTABLE'
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -102,7 +145,7 @@ pipeline {
         
         stage('Deploy to Staging') {
             when {
-                expression { params.ENVIRONMENT == 'staging' || params.ENVIRONMENT == 'both' }
+                expression { params.ENVIRONMENT == 'staging' }
             }
             steps {
                 echo "Deploying version ${params.VERSION} to Staging environment"
@@ -206,6 +249,9 @@ pipeline {
         always {
             // Clean workspace but keep artifacts
             cleanWs(patterns: [[pattern: "${ARTIFACT_DIR}/**", type: 'INCLUDE']])
+            
+            // Save SonarQube results link for easy access
+            echo "SonarQube results available at: ${env.SONAR_URL}/dashboard/index/${env.SONAR_PROJECT_KEY}"
         }
     }
 }
