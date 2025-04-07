@@ -6,7 +6,7 @@ Deploy a **PHP CRUD Application** connected to a **MySQL Database** using a full
 
 - Deployment to **Staging**.
 - **Manual promotion** to **Production**.
-- Deployment artifacts stored in **Nexus** or **AWS S3**.
+- Deployment artifacts stored in **AWS S3**.
 - App is publicly accessible over the internet via **port 80**.
 
 ---
