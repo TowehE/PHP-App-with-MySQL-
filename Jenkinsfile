@@ -10,6 +10,8 @@ pipeline {
         ARTIFACT_NAME = "php-crud-app"
         ARTIFACT_DIR = "artifacts"
         MYSQL_CREDS = credentials('mysql-credentials')
+        // Only staging needs a public IP
+        STAGING_PUBLIC_IP = "18.208.213.31"
     }
     
     stages {
@@ -38,17 +40,6 @@ pipeline {
                 // Here you would upload to Nexus or S3
                 // For now, we'll just keep it locally
                 echo "Artifact stored at: ${WORKSPACE}/${ARTIFACT_DIR}/${ARTIFACT_NAME}-${params.VERSION}.zip"
-
-                // AWS Credentials added here for S3 upload
-                /*
-                withAWS(credentials: 'aws-s3-credentials') {
-                    s3Upload(
-                        bucket: 'your-s3-bucket-name',
-                        file: "${ARTIFACT_DIR}/${ARTIFACT_NAME}-${params.VERSION}.zip",
-                        path: "artifacts/${ARTIFACT_NAME}-${params.VERSION}.zip"
-                    )
-                }
-                */
             }
         }
         
@@ -67,8 +58,7 @@ pipeline {
                     sh "mkdir -p ansible || true"
                     sh "cp ${ARTIFACT_DIR}/${artifactName} ansible/"
                     
-                    // Use sshagent with the configured key and let Ansible handle host checking
-                    // using the options from inventory file
+                    // Use sshagent with the configured key
                     sshagent(['staging-ssh-key']) {
                         sh """
                             cd ansible
@@ -77,8 +67,8 @@ pipeline {
                     }
                 }
                 
-                // Use the IP from inventory file
-                echo "Staging deployment complete. Access at http://172.31.27.239"
+                // Use the public IP for external access to staging
+                echo "Staging deployment complete. Access at http://${env.STAGING_PUBLIC_IP}"
             }
             post {
                 failure {
@@ -112,9 +102,8 @@ pipeline {
                     sh "mkdir -p ansible || true"
                     sh "cp ${ARTIFACT_DIR}/${artifactName} ansible/"
                     
-                    // Use sshagent with the configured key and let Ansible handle host checking
-                    // using the options from inventory file
-                    sshagent(['production-ssh-key']) {  // Using a separate key for production
+                    // Use sshagent with the configured key
+                    sshagent(['production-ssh-key']) {
                         sh """
                             cd ansible
                             ansible-playbook playbook.yml -i inventory -e "target_env=production app_version=${params.VERSION} artifact_name=${artifactName} artifact_path=./${artifactName}"
@@ -122,8 +111,9 @@ pipeline {
                     }
                 }
                 
-                // Use the IP from inventory file
-                echo "Production deployment complete. Access at http://172.31.23.26"
+                // Production is private, mention access through VPN or bastion
+                echo "Production deployment complete. Access via internal network at http://172.31.23.26"
+                echo "Note: Production server is only accessible from within the VPC or via VPN"
             }
             post {
                 failure {
