@@ -21,6 +21,17 @@ pipeline {
     }
     
     stages {
+        stage('Debug Parameters') {
+            steps {
+                echo "==================== DEBUG INFORMATION ===================="
+                echo "ENVIRONMENT parameter: ${params.ENVIRONMENT}"
+                echo "REQUIRE_APPROVAL parameter: ${params.REQUIRE_APPROVAL}"
+                echo "VERSION parameter: ${params.VERSION}"
+                echo "Current Jenkins User: ${currentBuild.getBuildCauses()[0].userId ?: 'Unknown'}"
+                echo "==========================================================="
+            }
+        }
+        
         stage('Checkout') {
             steps {
                 checkout scm
@@ -260,15 +271,37 @@ pipeline {
         
         stage('Approve Production Deployment') {
             when {
-                allOf {
-                    expression { params.ENVIRONMENT == 'production' }
-                    expression { params.REQUIRE_APPROVAL == true }
+                expression { 
+                    echo "Evaluating approval conditions:"
+                    echo "ENVIRONMENT is production: ${params.ENVIRONMENT == 'production'}"
+                    echo "REQUIRE_APPROVAL is true: ${params.REQUIRE_APPROVAL == true}"
+                    return params.ENVIRONMENT == 'production' && params.REQUIRE_APPROVAL == true
                 }
             }
             steps {
-                // Manual approval step
-                timeout(time: 1, unit: 'DAYS') {
-                    input message: "Deploy to Production?", ok: "Approve"
+                echo "Entering approval stage - if you see this message but don't see the approval prompt, check your permissions"
+                // Add a small delay to ensure UI is updated
+                sleep time: 5, unit: 'SECONDS'
+                
+                // Modified approval step with more information
+                script {
+                    try {
+                        timeout(time: 1, unit: 'DAYS') {
+                            def approvalMessage = """
+                            Please review the following deployment details:
+                            - Version: ${params.VERSION}
+                            - Environment: ${params.ENVIRONMENT}
+                            - Artifact: ${ARTIFACT_NAME}-${params.VERSION}.zip
+                            
+                            Click "Approve" to proceed with the production deployment.
+                            """
+                            input(message: approvalMessage, ok: "Approve")
+                            echo "Approval received!"
+                        }
+                    } catch (Exception e) {
+                        echo "Exception during approval process: ${e.message}"
+                        error "Approval failed or was aborted: ${e.message}"
+                    }
                 }
             }
         }
@@ -326,6 +359,11 @@ pipeline {
             echo "Pipeline failed. Please check the logs."
         }
         always {
+            echo "Pipeline parameters used:"
+            echo "- ENVIRONMENT: ${params.ENVIRONMENT}"
+            echo "- VERSION: ${params.VERSION}"
+            echo "- REQUIRE_APPROVAL: ${params.REQUIRE_APPROVAL}"
+            
             // Clean workspace but keep artifacts
             cleanWs(patterns: [[pattern: "${ARTIFACT_DIR}/**", type: 'INCLUDE']])
             
