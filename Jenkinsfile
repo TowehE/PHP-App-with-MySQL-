@@ -13,7 +13,6 @@ pipeline {
         // Only staging needs a public IP
         STAGING_PUBLIC_IP = "3.80.29.14"
         SONAR_TOKEN = credentials('sonar-token')
-        SONAR_SCANNER_VERSION = "4.8.0.2856"
     }
     
     stages {
@@ -23,35 +22,7 @@ pipeline {
             }
         }
 
-        stage('Setup SonarScanner') {
-            steps {
-                script {
-                    // Check if sonar-scanner is already installed
-                    def scannerExists = sh(script: 'command -v sonar-scanner || echo "not found"', returnStdout: true).trim()
-                    
-                    if (scannerExists == "not found") {
-                        echo "Installing SonarScanner ${env.SONAR_SCANNER_VERSION}"
-                        
-                        // Create a directory for tools if it doesn't exist
-                        sh "mkdir -p /tmp/sonar-scanner"
-                        
-                        // Download and extract SonarScanner
-                        sh """
-                            cd /tmp/sonar-scanner
-                            wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${env.SONAR_SCANNER_VERSION}-linux.zip
-                            unzip sonar-scanner-cli-${env.SONAR_SCANNER_VERSION}-linux.zip
-                        """
-                        
-                        // Set environment variable for the current pipeline execution
-                        env.PATH = "/tmp/sonar-scanner/sonar-scanner-${env.SONAR_SCANNER_VERSION}-linux/bin:${env.PATH}"
-                    } else {
-                        echo "SonarScanner is already installed"
-                    }
-                }
-            }
-        }
-
-        stage('SonarQube Analysis') {
+     stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQube') {
                     // For PHP projects without Maven
@@ -64,6 +35,9 @@ pipeline {
                         -Dsonar.host.url=http://54.196.217.149:9000 \
                         -Dsonar.login=${SONAR_TOKEN}
                     """
+                    
+                    // Alternative for Maven projects (commented out)
+                    // sh 'mvn sonar:sonar -Dsonar.host.url=http://54.196.217.149:9000 -Dsonar.login=${SONAR_TOKEN}'
                 }
             }
         }
