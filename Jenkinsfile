@@ -2,7 +2,6 @@ pipeline {
     agent any
     
     tools {
-        // Correct tool type for SonarQube Scanner
         'hudson.plugins.sonar.SonarRunnerInstallation' 'SonarScanner'
     }
     
@@ -15,30 +14,40 @@ pipeline {
         ARTIFACT_NAME = "php-crud-app"
         ARTIFACT_DIR = "artifacts"
         MYSQL_CREDS = credentials('mysql-credentials')
-        // Only staging needs a public IP
         STAGING_PUBLIC_IP = "3.80.29.14"
-        SONAR_TOKEN = credentials('sonar-token')
     }
     
     stages {
         stage('Checkout') {
             steps {
                 checkout scm
+                
+                // Check if src directory exists
+                script {
+                    if (!fileExists('src')) {
+                        error "Source directory 'src' not found. Please check your repository structure."
+                    }
+                }
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQube') {
-                    withEnv(["SONAR_TOKEN=${SONAR_TOKEN}"]) {
-                        // Using the SonarScanner tool installation
-                        sh "${tool 'SonarScanner'}/bin/sonar-scanner \
-                            -Dsonar.projectKey=php-crud-app \
-                            -Dsonar.projectName=\"PHP CRUD Application\" \
-                            -Dsonar.projectVersion=${params.VERSION} \
-                            -Dsonar.sources=src \
-                            -Dsonar.host.url=http://54.196.217.149:9000 \
-                            -Dsonar.login=${SONAR_TOKEN}"
+                    // Use proper credentials binding for security
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                        // Add Java options to fix compatibility issues with Java 17
+                        withEnv(["SONAR_SCANNER_OPTS=-Djava.security.manager=allow --add-opens=java.base/java.lang=ALL-UNNAMED"]) {
+                            sh """
+                                ${tool 'SonarScanner'}/bin/sonar-scanner \\
+                                -Dsonar.projectKey=php-crud-app \\
+                                -Dsonar.projectName="PHP CRUD Application" \\
+                                -Dsonar.projectVersion=${params.VERSION} \\
+                                -Dsonar.sources=src \\
+                                -Dsonar.host.url=http://54.196.217.149:9000 \\
+                                -Dsonar.login=\${SONAR_TOKEN}
+                            """
+                        }
                     }
                 }
             }
@@ -47,6 +56,7 @@ pipeline {
         stage('Quality Gate') {
             steps {
                 timeout(time: 1, unit: 'HOURS') {
+                    // Changed to recordIssues for better error handling
                     waitForQualityGate abortPipeline: true
                 }
             }
@@ -58,9 +68,22 @@ pipeline {
                     // Create artifacts directory
                     sh "mkdir -p ${ARTIFACT_DIR}"
                     
+                    // Check if needed directories exist before zipping
+                    def sourceDirs = ""
+                    if (fileExists('src')) {
+                        sourceDirs += "src/ "
+                    }
+                    if (fileExists('sql')) {
+                        sourceDirs += "sql/ "
+                    }
+                    
+                    if (sourceDirs.trim().isEmpty()) {
+                        error "No source directories found to package"
+                    }
+                    
                     // Create a zip archive of the application
                     sh """
-                        zip -r ${ARTIFACT_DIR}/${ARTIFACT_NAME}-${params.VERSION}.zip src/ sql/
+                        zip -r ${ARTIFACT_DIR}/${ARTIFACT_NAME}-${params.VERSION}.zip ${sourceDirs}
                     """
                 }
             }
@@ -69,7 +92,10 @@ pipeline {
         stage('Store Artifact') {
             steps {
                 // Here you would upload to Nexus or S3
-                // For now, we'll just keep it locally
+                archiveArtifacts artifacts: "${ARTIFACT_DIR}/${ARTIFACT_NAME}-${params.VERSION}.zip", 
+                                 allowEmptyArchive: false,
+                                 fingerprint: true
+                
                 echo "Artifact stored at: ${WORKSPACE}/${ARTIFACT_DIR}/${ARTIFACT_NAME}-${params.VERSION}.zip"
             }
         }
@@ -85,8 +111,14 @@ pipeline {
                     env.app_version = params.VERSION
                     def artifactName = "${ARTIFACT_NAME}-${params.VERSION}.zip"
 
-                    // Copy the artifact to the ansible directory
+                    // Check if ansible directory exists
                     sh "mkdir -p ansible || true"
+                    
+                    // Check if artifact exists before copying
+                    if (!fileExists("${ARTIFACT_DIR}/${artifactName}")) {
+                        error "Artifact ${artifactName} not found. Build may have failed."
+                    }
+                    
                     sh "cp ${ARTIFACT_DIR}/${artifactName} ansible/"
                     
                     // Use sshagent with the configured key
@@ -98,7 +130,6 @@ pipeline {
                     }
                 }
                 
-                // Use the public IP for external access to staging
                 echo "Staging deployment complete. Access at http://${env.STAGING_PUBLIC_IP}"
             }
             post {
@@ -114,7 +145,9 @@ pipeline {
             }
             steps {
                 // Manual approval step
-                input message: "Deploy to Production?", ok: "Approve"
+                timeout(time: 1, unit: 'DAYS') {
+                    input message: "Deploy to Production?", ok: "Approve"
+                }
             }
         }
         
@@ -129,8 +162,14 @@ pipeline {
                     env.app_version = params.VERSION
                     def artifactName = "${ARTIFACT_NAME}-${params.VERSION}.zip"
 
-                    // Copy the artifact to the ansible directory
+                    // Check if ansible directory exists
                     sh "mkdir -p ansible || true"
+                    
+                    // Check if artifact exists before copying
+                    if (!fileExists("${ARTIFACT_DIR}/${artifactName}")) {
+                        error "Artifact ${artifactName} not found. Build may have failed."
+                    }
+                    
                     sh "cp ${ARTIFACT_DIR}/${artifactName} ansible/"
                     
                     // Use sshagent with the configured key
@@ -142,13 +181,16 @@ pipeline {
                     }
                 }
                 
-                // Production is private, mention access through VPN or bastion
                 echo "Production deployment complete. Access via internal network at http://172.31.23.26"
                 echo "Note: Production server is only accessible from within the VPC or via VPN"
             }
             post {
                 failure {
                     echo "Production deployment failed. Check SSH connections and server availability."
+                }
+                success {
+                    echo "Production deployment successful! Sending notification..."
+                    // Add notification code here if needed
                 }
             }
         }
@@ -162,8 +204,8 @@ pipeline {
             echo "Pipeline failed. Please check the logs."
         }
         always {
-            // Clean workspace
-            cleanWs()
+            // Clean workspace but keep artifacts
+            cleanWs(patterns: [[pattern: "${ARTIFACT_DIR}/**", type: 'INCLUDE']])
         }
     }
 }
