@@ -1,6 +1,10 @@
 pipeline {
     agent any
     
+    tools {
+        sonarScanner 'SonarScanner'  // Name of the SonarScanner installation in Jenkins
+    }
+    
     parameters {
         string(name: 'VERSION', defaultValue: '1.0.0', description: 'Version to deploy')
         choice(name: 'ENVIRONMENT', choices: ['staging', 'production'], description: 'Environment to deploy to')
@@ -26,20 +30,15 @@ pipeline {
             steps {
                 withSonarQubeEnv('SonarQube') {
                     withEnv(["SONAR_TOKEN=${SONAR_TOKEN}"]) {
-                        // For PHP projects without Maven
-                        sh '''
-                            sonar-scanner \
+                        // Using the SonarScanner tool installation
+                        sh "${tool 'SonarScanner'}/bin/sonar-scanner \
                             -Dsonar.projectKey=php-crud-app \
-                            -Dsonar.projectName="PHP CRUD Application" \
-                            -Dsonar.projectVersion=''' + params.VERSION + ''' \
+                            -Dsonar.projectName=\"PHP CRUD Application\" \
+                            -Dsonar.projectVersion=${params.VERSION} \
                             -Dsonar.sources=src \
                             -Dsonar.host.url=http://54.196.217.149:9000 \
-                            -Dsonar.login=${SONAR_TOKEN}
-                        '''
+                            -Dsonar.login=${SONAR_TOKEN}"
                     }
-                    
-                    // Alternative for Maven projects (commented out)
-                    // sh 'mvn sonar:sonar -Dsonar.host.url=http://54.196.217.149:9000 -Dsonar.login=${SONAR_TOKEN}'
                 }
             }
         }
