@@ -55,7 +55,7 @@ pipeline {
         
         stage('Quality Gate') {
             steps {
-                timeout(time: 1, unit: 'HOURS') {
+                timeout(time: 5, unit: 'MINUTES') {
                     // Changed to recordIssues for better error handling
                     waitForQualityGate abortPipeline: true
                 }
