@@ -22,20 +22,21 @@ pipeline {
             }
         }
 
-     stage('SonarQube Analysis') {
+        stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQube') {
-                    withEnv(["SONAR_TOKEN=${SONAR_TOKEN}"]) 
-                    // For PHP projects without Maven
-               sh '''
-                    sonar-scanner \
-                    -Dsonar.projectKey=php-crud-app \
-                    -Dsonar.projectName="PHP CRUD Application" \
-                    -Dsonar.projectVersion=''' + params.VERSION + ''' \
-                    -Dsonar.sources=src \
-                    -Dsonar.host.url=http://54.196.217.149:9000 \
-                    -Dsonar.login=${SONAR_TOKEN}
-                '''
+                    withEnv(["SONAR_TOKEN=${SONAR_TOKEN}"]) {
+                        // For PHP projects without Maven
+                        sh '''
+                            sonar-scanner \
+                            -Dsonar.projectKey=php-crud-app \
+                            -Dsonar.projectName="PHP CRUD Application" \
+                            -Dsonar.projectVersion=''' + params.VERSION + ''' \
+                            -Dsonar.sources=src \
+                            -Dsonar.host.url=http://54.196.217.149:9000 \
+                            -Dsonar.login=${SONAR_TOKEN}
+                        '''
+                    }
                     
                     // Alternative for Maven projects (commented out)
                     // sh 'mvn sonar:sonar -Dsonar.host.url=http://54.196.217.149:9000 -Dsonar.login=${SONAR_TOKEN}'
