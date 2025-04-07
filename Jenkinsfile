@@ -21,17 +21,6 @@ pipeline {
     }
     
     stages {
-        stage('Debug Parameters') {
-            steps {
-                echo "==================== DEBUG INFORMATION ===================="
-                echo "ENVIRONMENT parameter: ${params.ENVIRONMENT}"
-                echo "REQUIRE_APPROVAL parameter: ${params.REQUIRE_APPROVAL}"
-                echo "VERSION parameter: ${params.VERSION}"
-                echo "Current Jenkins User: ${currentBuild.getBuildCauses()[0].userId ?: 'Unknown'}"
-                echo "==========================================================="
-            }
-        }
-        
         stage('Checkout') {
             steps {
                 checkout scm
@@ -269,38 +258,39 @@ pipeline {
             }
         }
         
-        stage('Approve Production Deployment') {
+        // *** FIXED PRODUCTION APPROVAL STAGE ***
+        stage('Production Approval') {
             when {
-                expression { 
-                    echo "Evaluating approval conditions:"
-                    echo "ENVIRONMENT is production: ${params.ENVIRONMENT == 'production'}"
-                    echo "REQUIRE_APPROVAL is true: ${params.REQUIRE_APPROVAL == true}"
-                    return params.ENVIRONMENT == 'production' && params.REQUIRE_APPROVAL == true
+                allOf {
+                    expression { return params.ENVIRONMENT == 'production' }
+                    expression { return params.REQUIRE_APPROVAL == true }
                 }
             }
             steps {
-                echo "Entering approval stage - if you see this message but don't see the approval prompt, check your permissions"
-                // Add a small delay to ensure UI is updated
-                sleep time: 5, unit: 'SECONDS'
+                echo "=== Preparing for production deployment approval ==="
+                echo "Version: ${params.VERSION}"
+                echo "Environment: ${params.ENVIRONMENT}"
+                echo "Require Approval: ${params.REQUIRE_APPROVAL}"
                 
-                // Modified approval step with more information
+                // Use a simpler input mechanism to avoid UI issues
                 script {
                     try {
-                        timeout(time: 1, unit: 'DAYS') {
-                            def approvalMessage = """
-                            Please review the following deployment details:
-                            - Version: ${params.VERSION}
-                            - Environment: ${params.ENVIRONMENT}
-                            - Artifact: ${ARTIFACT_NAME}-${params.VERSION}.zip
-                            
-                            Click "Approve" to proceed with the production deployment.
-                            """
-                            input(message: approvalMessage, ok: "Approve")
-                            echo "Approval received!"
-                        }
+                        def userInput = input(
+                            id: 'approvalInput', 
+                            message: "Deploy version ${params.VERSION} to Production?", 
+                            ok: 'Approve',
+                            parameters: [
+                                string(defaultValue: '', description: 'Enter your name for audit purposes (optional)', name: 'approver')
+                            ],
+                            submitterParameter: 'approvedBy'
+                        )
+                        
+                        def approver = userInput.approver ?: userInput.approvedBy ?: 'Unknown'
+                        echo "Deployment approved by: ${approver}"
+                        env.DEPLOYMENT_APPROVER = approver
                     } catch (Exception e) {
-                        echo "Exception during approval process: ${e.message}"
-                        error "Approval failed or was aborted: ${e.message}"
+                        currentBuild.result = 'ABORTED'
+                        error "Production deployment was not approved: ${e.getMessage()}"
                     }
                 }
             }
@@ -359,7 +349,8 @@ pipeline {
             echo "Pipeline failed. Please check the logs."
         }
         always {
-            echo "Pipeline parameters used:"
+            echo "Pipeline execution completed with result: ${currentBuild.result ?: 'SUCCESS'}"
+            echo "Build parameters used:"
             echo "- ENVIRONMENT: ${params.ENVIRONMENT}"
             echo "- VERSION: ${params.VERSION}"
             echo "- REQUIRE_APPROVAL: ${params.REQUIRE_APPROVAL}"
