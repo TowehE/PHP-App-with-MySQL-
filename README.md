@@ -2,7 +2,7 @@
 
 ## 🎯 Project Goal
 
-Deploy a **PHP CRUD Application** connected to a **MySQL Database** using a fully automated **CI/CD Jenkins Pipeline**. This includes:
+Deploying a **PHP CRUD Application** connected to a **MySQL Database** using a manual deployment **CI/CD Jenkins Pipeline**. This includes:
 
 - Deployment to **Staging**.
 - **Manual promotion** to **Production**.
@@ -19,7 +19,8 @@ Deploy a **PHP CRUD Application** connected to a **MySQL Database** using a full
 |----------------|----------|--------------------------------------|
 | Jenkins Master | CentOS   | Controls pipeline execution          |
 | Jenkins Agent  | Ubuntu   | Performs builds, deployments, etc.   |
-| App Servers    | Ubuntu   | Hosts PHP app + MySQL DB             |
+| App Servers    | Ubuntu   | Hosts PHP app + MySQL DB    
+| Sonar          | AWS
 
 ---
 
