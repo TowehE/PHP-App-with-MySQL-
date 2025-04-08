@@ -45,13 +45,12 @@ A Jenkins `Declarative Pipeline` with **multi-stage steps**:
 
 ### 🔨 Build Stage
 - Clone the PHP app repo from GitHub
-- Run PHP lint or unit tests
+- Run PHP sonarqube test
 - Archive the app as a `.zip` or `.tar.gz`
-- Upload artifact to Nexus/S3
+- Upload artifact to S3
 
 ### 🚀 Staging Deployment
 - Deploy the archived artifact to the **staging** server
-- Verify successful deployment (ping, curl, or smoke test)
 
 ### ✋ Manual Approval
 - Pause pipeline
