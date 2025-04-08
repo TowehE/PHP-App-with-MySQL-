@@ -326,7 +326,7 @@ pipeline {
                     }
                 }
                 
-                echo "Production deployment complete. Access via internal network at http://172.31.23.26"
+                echo "Production deployment complete. Access via internal network at http://13.218.249.218/"
                 echo "Note: Production server is only accessible from within the VPC or via VPN"
             }
             post {
